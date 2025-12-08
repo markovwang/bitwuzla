@@ -10,7 +10,7 @@
 
 #ifndef BZLA__BITBLAST_AIG_CNF_H
 #define BZLA__BITBLAST_AIG_CNF_H
-#include "bitblast/aig/aig_manager.h"
+#include "bitblast/aig/aig_node.h"
 
 namespace bzla::bitblast {
 
@@ -18,6 +18,12 @@ class SatInterface
 {
  public:
    virtual ~SatInterface() {};
+
+   /**
+    * Allocate new variable.
+    * @return Fresh variable.
+    */
+   virtual int32_t new_var() = 0;
 
    /**
     * Add literal to current clause.
@@ -71,7 +77,7 @@ class AigCnfEncoder
     uint64_t num_literals = 0;  // Number of added literals
   };
 
-  AigCnfEncoder(SatInterface& sat_solver) : d_sat_solver(sat_solver){};
+  AigCnfEncoder(SatInterface& sat_solver);
 
   /**
    * Recursively encodes AIG node to CNF.
@@ -106,10 +112,13 @@ class AigCnfEncoder
   /** Mark `aig` as encoded. */
   void set_encoded(const AigNode& aig);
 
-  /** Maps AIG id to flag that indicates whether the AIG was already encoded. */
-  std::vector<bool> d_aig_encoded;
+  /** Maps AIG id to CNF id, which indicates whether the AIG was encoded. */
+  std::vector<int32_t> d_aig_encoded;
   /** SAT solver. */
   SatInterface& d_sat_solver;
+  /** Variable allocated for true/false. */
+  int32_t d_true_var;
+
   /** CNF statistics. */
   Statistics d_statistics;
 };

@@ -19,7 +19,6 @@
 #include "bitblast/aig_bitblaster.h"
 #include "env.h"
 #include "node/node_manager.h"
-#include "node/node_ref_vector.h"
 #include "sat/cadical.h"
 #include "solver/bv/aig_bitblaster.h"
 
@@ -44,6 +43,8 @@ class CnfSatInterface : public bitblast::SatInterface
 {
  public:
   CnfSatInterface(sat::Cadical& solver) : d_solver(solver) {}
+
+  int32_t new_var() override { return d_solver.new_var(); }
 
   void add(int64_t lit, int64_t aig_id = 0) override
   {
@@ -142,7 +143,6 @@ PassSkeletonPreproc::apply(AssertionVector& assertions)
     d_sat_solver.reset(new sat::Cadical());
     d_fixed_listener.reset(new FixedListener());
     d_sat_solver->solver()->connect_fixed_listener(d_fixed_listener.get());
-    d_encode_cache.clear();
     d_reset = false;
     ++d_stats.num_resets;
   }
@@ -214,20 +214,9 @@ PassSkeletonPreproc::apply(AssertionVector& assertions)
   }
   d_done = true;
   d_sat_solver.reset(new sat::Cadical());
-  d_encode_cache.clear();
 }
 
 /* --- PassSkeletonPreproc private ------------------------------------------ */
-
-int64_t
-PassSkeletonPreproc::lit(const Node& term)
-{
-  assert(term.type().is_bool()
-         || (term.type().is_bv() && term.type().bv_size() == 1));
-  return (term.kind() == Kind::NOT || term.kind() == Kind::BV_NOT)
-             ? -term[0].id()
-             : term.id();
-}
 
 PassSkeletonPreproc::Statistics::Statistics(util::Statistics& stats,
                                             const std::string& prefix)
