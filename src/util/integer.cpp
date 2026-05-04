@@ -10,9 +10,12 @@
 
 #include "util/integer.h"
 
+#include <gmp.h>
+
 #include <cassert>
 #include <sstream>
 
+#include "lib/bv/bitvector.h"
 #include "util/gmp_utils.h"
 
 namespace bzla::util {
@@ -35,6 +38,18 @@ Integer::Integer(const char* val)
 Integer::Integer(const std::string& val)
 {
   mpz_init_set_str(d_val_gmp, val.c_str(), 10);
+}
+
+Integer::Integer(const BitVector& bv)
+{
+  if (bv.size() > BitVector::s_native_size)
+  {
+    mpz_init_set(d_val_gmp, bv.gmp_value());
+  }
+  else
+  {
+    mpz_init_set_ull(d_val_gmp, bv.to_uint64());
+  }
 }
 
 Integer Integer::from_mpz_t(const mpz_t val)
@@ -260,6 +275,12 @@ Integer::to_int64() const
   }
   assert(value <= std::numeric_limits<int64_t>::max());
   return value;
+}
+
+uint64_t
+Integer::base2_size() const
+{
+  return mpz_sizeinbase(d_val_gmp, 2);
 }
 
 std::ostream&
