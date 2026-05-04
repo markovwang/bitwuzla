@@ -38,8 +38,8 @@ compute_cardinality(const Type& type)
     // +zero -zero: 2
     // +inf  -inf : 2
     // nan        : 1
-    // subnormals : 2 * (2^{sig_size-1)-1) = 2^{sig_size} - 2
-    // normalss   : 2 * (2^{exp_size} - 2) * 2^{sig_size-1} =
+    // subnormals : 2 * (2^{sig_size-1}-1) = 2^{sig_size} - 2
+    // normals    : 2 * (2^{exp_size} - 2) * 2^{sig_size-1} =
     //              (2^{exp_size} - 2) * 2^{sig_size}
     //
     // card = 5 + 2^{sig_size} - 2 + (2^{exp_size} - 2) * 2^{sig_size}
