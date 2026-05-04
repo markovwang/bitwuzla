@@ -11,6 +11,7 @@
 #include "node/node.h"
 
 #include <cassert>
+#include <sstream>
 
 #include "node/node_data.h"
 #include "node/node_manager.h"
