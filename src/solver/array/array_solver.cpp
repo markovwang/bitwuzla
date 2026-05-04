@@ -11,6 +11,8 @@
 #include "solver/array/array_solver.h"
 
 #include <deque>
+#include <map>
+#include <set>
 
 #include "env.h"
 #include "node/node_manager.h"
@@ -18,6 +20,8 @@
 #include "node/node_utils.h"
 #include "node/unordered_node_ref_map.h"
 #include "node/unordered_node_ref_set.h"
+#include "type/card.h"
+#include "util/integer.h"
 #include "util/logger.h"
 
 namespace bzla::array {
@@ -32,6 +36,7 @@ operator<<(std::ostream& os, const LemmaId& lid)
   switch (lid)
   {
     case LemmaId::ACCESS_CONST_ARRAY: os << "ACCESS_CONST_ARRAY"; break;
+    case LemmaId::CONST_ARRAY_DIFF: os << "CONST_ARRAY_DIFF"; break;
     case LemmaId::ACCESS_STORE: os << "ACCESS_STORE"; break;
     case LemmaId::CONGRUENCE: os << "CONGRUENCE"; break;
     case LemmaId::DISEQUALITY: os << "DISEQUALITY"; break;
@@ -54,6 +59,7 @@ ArraySolver::ArraySolver(Env& env, SolverState& state)
       d_equalities(state.backtrack_mgr()),
       d_active_parents(state.backtrack_mgr()),
       d_disequality_lemma_cache(state.backtrack_mgr()),
+      d_const_array_eq_lemma_cache(state.backtrack_mgr()),
       d_stats(env.statistics(), "solver::array::"),
       d_logger(env.logger())
 {
@@ -83,6 +89,7 @@ ArraySolver::check()
   d_lemma_cache.clear();
   ++d_stats.num_checks;
   d_active_equalities.clear();
+  d_eq_const_arrays.clear();
 
   // Get current assignment for register equalities and populate
   // d_active_equalities.
@@ -96,19 +103,29 @@ ArraySolver::check()
   }
 
   // Check selects and equalities until fixed-point
-  size_t i_sel = 0, i_eq = 0;
-  while (i_sel < d_selects.size() || i_eq < d_equalities.size())
+  size_t i_sel = 0, i_eq = 0, i_ca = 0;
+  while (i_sel < d_selects.size() || i_eq < d_equalities.size()
+         || i_ca < d_eq_const_arrays.size())
   {
     // Do not cache size here since d_selects may grow while iterating.
     while (i_sel < d_selects.size())
     {
-      check_access(d_selects[i_sel++]);
+      Node sel = d_selects[i_sel++];
+      check_access(sel);
     }
 
     // Do not cache size here since d_selects may grow while iterating.
     while (i_eq < d_equalities.size())
     {
-      check_equality(d_equalities[i_eq++]);
+      Node eq = d_equalities[i_eq++];
+      check_equality(eq);
+    }
+
+    // Do not cache size here since d_selects may grow while iterating.
+    while (i_ca < d_eq_const_arrays.size())
+    {
+      Node ca = d_eq_const_arrays[i_ca++];
+      check_access(ca);
     }
   }
   d_in_check = false;
@@ -133,55 +150,9 @@ ArraySolver::value(const Node& term)
     std::unordered_map<Node, Node> cache;
     Node a1 = construct_model_value(term[0], cache);
     Node a2 = construct_model_value(term[1], cache);
-    if (a1 == a2)
-    {
-      return d_env.nm().mk_value(true);
-    }
-
-    std::unordered_map<Node, Node> m1, m2;
-    Node cur = a1;
-    while (cur.kind() == Kind::STORE)
-    {
-      assert(m1.find(cur[1]) == m1.end());
-      m1.emplace(cur[1], cur[2]);
-      cur = cur[0];
-    }
-    Node def1 = cur;
-
-    cur = a2;
-    while (cur.kind() == Kind::STORE)
-    {
-      assert(m2.find(cur[1]) == m2.end());
-      m2.emplace(cur[1], cur[2]);
-      cur = cur[0];
-    }
-    Node def2 = cur;
-
-    for (auto it1 = m1.begin(), end = m1.end(); it1 != end; ++it1)
-    {
-      auto it2 = m2.find(it1->first);
-      if ((it2 == m2.end() && it1->second != def2[0])
-          || (it2 != m2.end() && it2->second != it1->second))
-      {
-        return d_env.nm().mk_value(false);
-      }
-    }
-    for (auto it2 = m2.begin(), end = m2.end(); it2 != end; ++it2)
-    {
-      auto it1 = m1.find(it2->first);
-      if ((it1 == m1.end() && it2->second != def1[0])
-          || (it1 != m1.end() && it1->second != it2->second))
-      {
-        return d_env.nm().mk_value(false);
-      }
-    }
-
-    // TODO: This is not entirely correct since we have to check whether all
-    // indices have been overwritten. Refine this condition with a cardinality
-    // check of the index type.
-    return d_env.nm().mk_value(def1 == def2);
+    return d_env.nm().mk_value(a1 == a2);
   }
-  else if (term.kind() == Kind::SELECT)
+  else if (k == Kind::SELECT)
   {
     // Select index from constructed normalized array value.
     std::unordered_map<Node, Node> cache;
@@ -219,6 +190,12 @@ ArraySolver::register_term(const Node& term)
 const ArraySolver::Access*
 ArraySolver::get_access(const Node& acc)
 {
+  if (acc.kind() == Kind::CONST_ARRAY)
+  {
+    auto it = d_accesses.try_emplace(
+        acc, acc, const_array_index(acc), d_solver_state);
+    return &it.first->second;
+  }
   auto it = d_accesses.try_emplace(acc, acc, d_solver_state);
   return &it.first->second;
 }
@@ -230,14 +207,6 @@ ArraySolver::check_access(const Node& access)
   if (!inserted)
   {
     return;
-  }
-
-  // equality over constant arrays not yet supported
-  if (access.kind() == Kind::CONST_ARRAY)
-  {
-    d_in_check = false;
-    d_solver_state.unsupported(
-        "Equality over constant arrays not fully supported yet");
   }
 
   Log(2);
@@ -296,8 +265,21 @@ ArraySolver::check_access(const Node& access)
       {
         if (!is_equal(acc, array[0]))
         {
-          add_access_const_array_lemma(*acc, array);
-          break;
+          if (acc->get().kind() == Kind::CONST_ARRAY)
+          {
+            if (add_const_array_equality_lemma(*acc, array))
+            {
+              break;
+            }
+          }
+          else
+          {
+            Log(2) << "\u2716 const array lemma";
+            Log(2) << "access: " << acc->get();
+            Log(2) << "array: " << array;
+            add_access_const_array_lemma(*acc, array);
+            break;
+          }
         }
       }
       else if (array.kind() == Kind::ITE)
@@ -379,7 +361,6 @@ ArraySolver::check_equality(const Node& eq)
     // Check store terms under equality
     unordered_node_ref_set cache;
     node_ref_vector visit{eq[0], eq[1]};
-    node_ref_vector const_arrays, base_arrays;
     do
     {
       const Node& cur = visit.back();
@@ -402,47 +383,17 @@ ArraySolver::check_equality(const Node& eq)
         {
           assert(cur.type().is_array());
           check_access(cur);
-          base_arrays.push_back(cur);
         }
         else if (cur.kind() == Kind::CONST_ARRAY)
         {
-          const_arrays.push_back(cur);
-        }
-        else
-        {
-          base_arrays.push_back(cur);
+          d_eq_const_arrays.push_back(cur);
         }
       }
     } while (!visit.empty());
-    // Special case: we can handle positive equality over two constant arrays
-    // that have the same value (no lemma required).
-    if (!const_arrays.empty())
-    {
-      assert(const_arrays.size() <= 2);
-      assert(base_arrays.size() <= 1);
-      if (const_arrays.size() == 2)
-      {
-        assert(base_arrays.empty());
-        const Node& ca0 = const_arrays[0];
-        const Node& ca1 = const_arrays[1];
-        if (d_solver_state.value(ca0[0]) != d_solver_state.value(ca1[0]))
-        {
-          check_access(ca0);
-          check_access(ca1);
-        }
-      }
-      else if (!base_arrays.empty())
-      {
-        check_access(const_arrays[0]);
-      }
-    }
   }
   else
   {
     auto [sel_a, sel_b] = add_disequality_lemma(eq);
-    // TODO: optimization: if sel_a and sel_b are created, we don't have to
-    // check them since they very likely have the same values (since
-    // unconstrained, and disequality lemma was just sent)
     check_access(sel_a);
     check_access(sel_b);
   }
@@ -457,7 +408,8 @@ ArraySolver::add_access_store_lemma(const Access& acc, const Node& store)
   Node conclusion = nm.mk_node(Kind::EQUAL, {acc.element(), store[2]});
 
   std::vector<Node> conjuncts;
-  collect_path_conditions(acc, store, conjuncts);
+  std::vector<std::pair<Node, bool>> path_stores;
+  collect_path_conditions(acc, store, conjuncts, path_stores);
   conjuncts.push_back(nm.mk_node(Kind::EQUAL, {acc.index(), store[1]}));
   d_stats.num_lemma_size << conjuncts.size();
   Node lem =
@@ -474,7 +426,8 @@ ArraySolver::add_access_const_array_lemma(const Access& acc, const Node& array)
   NodeManager& nm = d_env.nm();
   Node conclusion = nm.mk_node(Kind::EQUAL, {acc.element(), array[0]});
   std::vector<Node> conjuncts;
-  collect_path_conditions(acc, array, conjuncts);
+  std::vector<std::pair<Node, bool>> path_stores;
+  collect_path_conditions(acc, array, conjuncts, path_stores);
   d_stats.num_lemma_size << conjuncts.size();
   Node lem;
 
@@ -492,6 +445,70 @@ ArraySolver::add_access_const_array_lemma(const Access& acc, const Node& array)
   lemma(lem, LemmaId::ACCESS_CONST_ARRAY);
 }
 
+bool
+ArraySolver::add_const_array_equality_lemma(const Access& acc,
+                                            const Node& array)
+{
+  assert(acc.get().kind() == Kind::CONST_ARRAY);
+  assert(array.kind() == Kind::CONST_ARRAY);
+
+  NodeManager& nm = d_env.nm();
+  std::vector<Node> conditions, indices;
+  std::vector<std::pair<Node, bool>> path_stores;
+  util::Integer index_card = type::compute_cardinality(acc.index().type());
+  BitVector bv_card =
+      BitVector(index_card.base2_size(), index_card.gmp_value(), false);
+  indices.push_back(nm.mk_value(bv_card));
+  collect_path_conditions(acc, array, conditions, indices, path_stores);
+
+  Node conc;
+  if (indices.size() == 1)
+  {
+    conc = nm.mk_node(Kind::EQUAL, {acc.element(), array[0]});
+  }
+  else
+  {
+    assert(!indices.empty());
+    conc = nm.mk_node(Kind::OR,
+                      {nm.mk_node(Kind::DISTINCT_N, indices),
+                       nm.mk_node(Kind::EQUAL, {acc.element(), array[0]})});
+    // Move to solver engine
+    std::vector<Node> idx{indices.begin() + 1, indices.end()};
+    d_solver_state.register_distinct_heuristic(idx);
+  }
+  Node lem = d_env.rewriter().rewrite(nm.mk_node(
+      Kind::IMPLIES, {node::utils::mk_nary(nm, Kind::AND, conditions), conc}));
+
+  // We only add this lemma once per pair of constant arrays
+  if (d_const_array_eq_lemma_cache.insert(lem).second)
+  {
+    lemma(lem, LemmaId::CONST_ARRAY_DIFF);
+    std::vector<Node> elements_acc{acc.element()};
+    std::vector<Node> elements_arr{array[0]};
+    for (const auto& [s, prop_up] : path_stores)
+    {
+      if (!prop_up)
+      {
+        elements_arr.push_back(s[2]);
+      }
+      else
+      {
+        elements_acc.push_back(s[2]);
+      }
+    }
+    if (elements_acc.size() > 1)
+    {
+      d_solver_state.register_eq_heuristic(elements_acc);
+    }
+    if (elements_arr.size() > 1)
+    {
+      d_solver_state.register_eq_heuristic(elements_arr);
+    }
+    return true;
+  }
+  return false;
+}
+
 void
 ArraySolver::add_congruence_lemma(const Node& array,
                                   const Access& acc1,
@@ -502,8 +519,9 @@ ArraySolver::add_congruence_lemma(const Node& array,
   NodeManager& nm = d_env.nm();
   Node conclusion = nm.mk_node(Kind::EQUAL, {acc1.element(), acc2.element()});
   std::vector<Node> conjuncts;
-  collect_path_conditions(acc1, array, conjuncts);
-  collect_path_conditions(acc2, array, conjuncts);
+  std::vector<std::pair<Node, bool>> path_stores;
+  collect_path_conditions(acc1, array, conjuncts, path_stores);
+  collect_path_conditions(acc2, array, conjuncts, path_stores);
   conjuncts.push_back(nm.mk_node(Kind::EQUAL, {acc1.index(), acc2.index()}));
   d_stats.num_lemma_size << conjuncts.size();
   Node lem =
@@ -513,9 +531,11 @@ ArraySolver::add_congruence_lemma(const Node& array,
 }
 
 void
-ArraySolver::collect_path_conditions(const Access& access,
-                                     const Node& array,
-                                     std::vector<Node>& conditions)
+ArraySolver::collect_path_conditions(
+    const Access& access,
+    const Node& array,
+    std::vector<Node>& conditions,
+    std::vector<std::pair<Node, bool>>& path_stores)
 {
   if (access.array() == array)
   {
@@ -622,14 +642,14 @@ ArraySolver::collect_path_conditions(const Access& access,
               {
                 visit.emplace_back(parent[1], false);
                 path.emplace(parent[1], parent);
-                Log(3) << "D: " << parent[1] << " -> " << parent;
+                Log(3) << "R: " << parent[1] << " -> " << parent;
               }
               else
               {
                 assert(parent[1] == cur);
                 visit.emplace_back(parent[0], false);
                 path.emplace(parent[0], parent);
-                Log(3) << "D: " << parent[0] << " -> " << parent;
+                Log(3) << "L: " << parent[0] << " -> " << parent;
               }
             }
           }
@@ -650,11 +670,18 @@ ArraySolver::collect_path_conditions(const Access& access,
 #ifndef NDEBUG
   unordered_node_ref_set pcache;
 #endif
+  Node prev = array;
   auto it = path.find(array);
   while (true)
   {
     assert(it != path.end());
     const Node& cur = it->second;
+    if (cur.kind() == Kind::STORE)
+    {
+      // propagated upwards?
+      path_stores.emplace_back(cur, cur[0] == prev);
+    }
+    prev = cur;
 #ifndef NDEBUG
     auto [itc, inserted] = pcache.insert(cur);
     assert(inserted);
@@ -666,6 +693,32 @@ ArraySolver::collect_path_conditions(const Access& access,
       break;
     }
     it = path.find(cur);
+  }
+}
+
+void
+ArraySolver::collect_path_conditions(
+    const Access& access,
+    const Node& array,
+    std::vector<Node>& conditions,
+    std::vector<Node>& indices,
+    std::vector<std::pair<Node, bool>>& path_stores)
+{
+  std::vector<Node> path_conditions;
+  collect_path_conditions(access, array, path_conditions, path_stores);
+
+  for (const auto& c : path_conditions)
+  {
+    if (c.kind() == Kind::DISTINCT)
+    {
+      assert(c[0] != access.index());
+      assert(c[1] == access.index());
+      indices.push_back(c[0]);
+    }
+    else
+    {
+      conditions.push_back(c);
+    }
   }
 }
 
@@ -774,6 +827,7 @@ ArraySolver::compute_parents(const Node& term)
     }
     else if (cur.kind() == Kind::STORE)
     {
+      ++d_stats.num_stores;
       d_parents[cur[0]].push_back(cur);
       visit.push_back(cur[0]);
     }
@@ -825,14 +879,7 @@ ArraySolver::construct_model_value(const Node& array,
       auto [it, inserted] = map.emplace(index, Node());
       if (inserted)
       {
-        if (cur[2].type().is_array())
-        {
-          it->second = construct_model_value(cur[2], cache);
-        }
-        else
-        {
-          it->second = d_solver_state.value(cur[2]);
-        }
+        it->second = construct_element_value(cur[2], cache);
         if (index == selected_index)
         {
           return it->second;
@@ -850,7 +897,7 @@ ArraySolver::construct_model_value(const Node& array,
   Node res;
   if (cur.kind() == Kind::CONST_ARRAY)
   {
-    res = nm.mk_const_array(cur.type(), d_solver_state.value(cur[0]));
+    res = nm.mk_const_array(cur.type(), construct_element_value(cur[0], cache));
   }
   else
   {
@@ -858,23 +905,49 @@ ArraySolver::construct_model_value(const Node& array,
            || cur.kind() == Kind::APPLY);
 
     auto it = d_array_models.find(cur);
+    std::unordered_map<Node, std::unordered_set<Node>> const_arrays;
     if (it != d_array_models.end())
     {
       for (const auto acc : it->second)
       {
+        // Since we do not check whether all indices of a constant array were
+        // overwritten while propagating them, we need to skip these constant
+        // arrays for model construction. Hence, we filter them out by computing
+        // the store indices along the propagation path and only consider
+        // the constant array if not all indices were overwritten.
+        if (acc->get().kind() == Kind::CONST_ARRAY)
+        {
+          // Compute store indices along the propagation path between the
+          // constant array and cur, filter out all non-relevant constant
+          // arrays, i.e., constant arrays that got overwritten.
+          std::vector<Node> path_conditions;
+          std::vector<std::pair<Node, bool>> path_stores;
+          collect_path_conditions(*acc, cur, path_conditions, path_stores);
+          std::unordered_set<Node> indices;
+          for (const auto& [store, _] : path_stores)
+          {
+            indices.insert(d_solver_state.value(store[1]));
+          }
+
+          // Constant array got overwritten, default value doesn't need to be
+          // considered.
+          if (util::Integer(indices.size())
+              >= type::compute_cardinality(acc->index().type()))
+          {
+            continue;
+          }
+
+          // Not all indices overwritten, we have a least one index with the
+          // default value of the const array.
+          const_arrays.emplace(construct_model_value(acc->get(), cache),
+                               std::move(indices));
+          continue;
+        }
         Node index           = d_solver_state.value(acc->index());
         auto [itm, inserted] = map.emplace(index, Node());
         if (inserted)
         {
-          const Node& element = acc->element();
-          if (element.type().is_array())
-          {
-            itm->second = construct_model_value(element, cache);
-          }
-          else
-          {
-            itm->second = d_solver_state.value(element);
-          }
+          itm->second = construct_element_value(acc->element(), cache);
           if (index == selected_index)
           {
             return itm->second;
@@ -882,7 +955,71 @@ ArraySolver::construct_model_value(const Node& array,
         }
       }
     }
-    res = utils::mk_default_value(nm, cur.type());
+
+    Node default_value;
+    // Construct model value from propagated constant arrays.
+    if (!const_arrays.empty())
+    {
+      Node dca;
+      size_t min_undefined = 0;
+      std::unordered_set<Node> all_indices;
+      for (const auto& [ca, updated_indices] : const_arrays)
+      {
+        // Pick default value from constant arrays with the most "missing"
+        // indices.
+        if (dca.is_null() || min_undefined > updated_indices.size())
+        {
+          dca           = ca;
+          min_undefined = updated_indices.size();
+        }
+        all_indices.insert(updated_indices.begin(), updated_indices.end());
+      }
+
+      // Add default values of each constant array for missing indices,
+      // there should not be any overlap of default values, i.e., a
+      // missing index has two different default values.
+      default_value = d_solver_state.value(dca[0]);
+      for (const auto& [ca, updated_indices] : const_arrays)
+      {
+        if (ca == dca)
+        {
+          continue;
+        }
+        Node dv = d_solver_state.value(ca[0]);
+        for (const auto& idx : all_indices)
+        {
+          if (updated_indices.find(idx) == updated_indices.end())
+          {
+            assert(map.find(idx) == map.end() || map.find(idx)->second == dv);
+            map.emplace(idx, dv);
+          }
+        }
+      }
+#ifndef NDEBUG
+      {
+        const auto& updated_indices = const_arrays[dca];
+        for (const auto& idx : all_indices)
+        {
+          if (updated_indices.find(idx) == updated_indices.end())
+          {
+            assert(map.find(idx) == map.end()
+                   || map.find(idx)->second == default_value);
+          }
+        }
+      }
+#endif
+    }
+
+    if (default_value.is_null())
+    {
+      res = utils::mk_default_value(nm, cur.type());
+    }
+    else
+    {
+      assert(default_value.is_value()
+             || default_value.kind() == Kind::CONST_ARRAY);
+      res = nm.mk_const_array(cur.type(), default_value);
+    }
   }
   assert(res.kind() == Kind::CONST_ARRAY);
 
@@ -901,6 +1038,17 @@ ArraySolver::construct_model_value(const Node& array,
   }
   cache.emplace(array, res);
   return res;
+}
+
+Node
+ArraySolver::construct_element_value(const Node& term,
+                                     std::unordered_map<Node, Node>& cache)
+{
+  if (term.type().is_array())
+  {
+    return construct_model_value(term, cache);
+  }
+  return d_solver_state.value(term);
 }
 
 bool
@@ -934,6 +1082,19 @@ ArraySolver::is_equal(const Access* acc, const Node& a)
   return acc->element_value() == d_solver_state.value(a);
 }
 
+Node
+ArraySolver::const_array_index(const Node& const_array)
+{
+  auto it = d_const_array_indices.find(const_array);
+  if (it == d_const_array_indices.end())
+  {
+    Node idx = d_env.nm().mk_const(const_array.type().array_index());
+    d_const_array_indices.emplace(const_array, idx);
+    return idx;
+  }
+  return it->second;
+}
+
 ArraySolver::Statistics::Statistics(util::Statistics& stats,
                                     const std::string& prefix)
     : num_checks(stats.new_stat<uint64_t>(prefix + "num_checks")),
@@ -941,10 +1102,9 @@ ArraySolver::Statistics::Statistics(util::Statistics& stats,
       num_propagations_up(stats.new_stat<uint64_t>(prefix + "propagations_up")),
       num_propagations_down(
           stats.new_stat<uint64_t>(prefix + "propagations_down")),
-      num_selects(
-          stats.new_stat<uint64_t>(prefix + "selects")),
-      num_equalities(
-          stats.new_stat<uint64_t>(prefix + "equalities")),
+      num_selects(stats.new_stat<uint64_t>(prefix + "selects")),
+      num_stores(stats.new_stat<uint64_t>(prefix + "stores")),
+      num_equalities(stats.new_stat<uint64_t>(prefix + "equalities")),
       num_lemma_size(
           stats.new_stat<util::HistogramStatistic>(prefix + "lemma_size")),
       lemmas(stats.new_stat<util::HistogramStatistic>(prefix + "lemmas")),
@@ -978,6 +1138,32 @@ ArraySolver::Access::Access(const Node& access, SolverState& state)
   }
 }
 
+ArraySolver::Access::Access(const Node& ca,
+                            const Node& ca_index,
+                            SolverState& state)
+    : d_access(ca), d_hash(0), d_const_array_index(ca_index)
+{
+  assert(ca.kind() == Kind::CONST_ARRAY);
+
+  // Compute hash value of function applications based on the current function
+  // argument model values.
+  d_index_value = index();
+  d_hash += std::hash<Node>{}(d_index_value);
+
+  if (element().type().is_array())
+  {
+    // Array values are always considered to be incomplete/partial unless the
+    // array solver concludes that everything is consistent. Equality is handled
+    // separately for these terms.
+    d_value = element();
+  }
+  else
+  {
+    // Cache value of access
+    d_value = state.value(element());
+  }
+}
+
 const Node&
 ArraySolver::Access::get() const
 {
@@ -991,12 +1177,20 @@ ArraySolver::Access::element() const
   {
     return d_access;
   }
+  else if (d_access.kind() == Kind::CONST_ARRAY)
+  {
+    return d_access[0];
+  }
   return d_access[2];
 }
 
 const Node&
 ArraySolver::Access::index() const
 {
+  if (d_access.kind() == Kind::CONST_ARRAY)
+  {
+    return d_const_array_index;
+  }
   return d_access[1];
 }
 
