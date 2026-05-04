@@ -93,6 +93,12 @@ class SolverEngine
    */
   bool lemma(const Node& lemma);
 
+  void hint(const Node& node, const Node& value);
+
+  void register_eq_heuristic(const std::vector<Node>& nodes);
+  void register_distinct_heuristic(const std::vector<Node>& nodes);
+
+
   /** Ensure that we have model values for given terms. */
   void ensure_model(const std::vector<Node>& terms);
 
@@ -113,6 +119,8 @@ class SolverEngine
   }
 
  private:
+  void check_distinct_n();
+
   /** Synchronize d_backtrack_mgr up to given level. */
   void sync_scope(size_t level);
 
@@ -166,6 +174,7 @@ class SolverEngine
   backtrack::unordered_set<Node> d_register_assertion_cache;
   /** Term cache used by process_term(). */
   backtrack::unordered_set<Node> d_register_term_cache;
+  backtrack::vector<Node> d_distinct_n;
 
   /** Lemmas added via lemma(). */
   std::vector<Node> d_lemmas;
