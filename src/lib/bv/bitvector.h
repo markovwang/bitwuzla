@@ -2280,6 +2280,8 @@ class BitVector
 
 std::ostream& operator<<(std::ostream& out, const BitVector& bv);
 
+bool operator<(const BitVector& bv0, const BitVector& bv1);
+
 /* -------------------------------------------------------------------------- */
 
 }  // namespace bzla
