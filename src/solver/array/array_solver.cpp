@@ -962,17 +962,32 @@ ArraySolver::construct_model_value(const Node& array,
     {
       Node dca;
       size_t min_undefined = 0;
-      std::unordered_set<Node> all_indices;
+      std::unordered_set<Node> all_indices, overlap_indices;
+      std::unordered_map<Node, size_t> index_count;
       for (const auto& [ca, updated_indices] : const_arrays)
       {
-        // Pick default value from constant arrays with the most "missing"
-        // indices.
+        // Pick default value from constant array with the most "missing"
+        // indices. That is, the missing indices need to be initialized with
+        // the default value of the selected constant array, otherwise, the
+        // equality between the constant array and this array does not hold.
+        // The indices that are overwritten can have different values,
+        // that are determined by other constant arrays if present.
         if (dca.is_null() || min_undefined > updated_indices.size())
         {
           dca           = ca;
           min_undefined = updated_indices.size();
         }
-        all_indices.insert(updated_indices.begin(), updated_indices.end());
+        for (const auto& i : updated_indices)
+        {
+          all_indices.insert(i);
+          ++index_count[i];
+          // Store index that overlaps for all constant arrays. We later store a
+          // canonical value on this index.
+          if (index_count[i] == const_arrays.size())
+          {
+            overlap_indices.insert(i);
+          }
+        }
       }
 
       // Add default values of each constant array for missing indices,
@@ -1008,6 +1023,31 @@ ArraySolver::construct_model_value(const Node& array,
         }
       }
 #endif
+      // Store canonical value at overlapping indices, i.e., pick the same value
+      // for each array constant if the same constant arrays (and paths) are
+      // involved.
+      if (!overlap_indices.empty())
+      {
+        // Get canonical default value of all involved constant arrays (also the
+        // skipped ones). We pick the value with the lowest id.
+        Node canonical_default_value;
+        for (const auto* acc : it->second)
+        {
+          if (acc->get().kind() == Kind::CONST_ARRAY)
+          {
+            Node val = d_solver_state.value(acc->get()[0]);
+            if (canonical_default_value.is_null()
+                || val < canonical_default_value)
+            {
+              canonical_default_value = val;
+            }
+          }
+        }
+        for (const auto& idx : overlap_indices)
+        {
+          map.emplace(idx, canonical_default_value);
+        }
+      }
     }
 
     if (default_value.is_null())
