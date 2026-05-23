@@ -62,6 +62,13 @@ BvSolver::BvSolver(Env& env, SolverState& state)
 BvSolver::~BvSolver() {}
 
 void
+BvSolver::set_decision_priority_terms(
+    const std::unordered_map<Node, uint32_t>& tiers)
+{
+  d_bitblast_solver.set_decision_priority_terms(tiers);
+}
+
+void
 BvSolver::register_assertion(const Node& assertion,
                              bool top_level,
                              bool is_lemma)
@@ -107,7 +114,7 @@ BvSolver::solve()
       if (d_sat_state == Result::UNKNOWN)
       {
         d_cur_solver = option::BvSolver::BITBLAST;
-        d_sat_state = d_bitblast_solver.solve();
+        d_sat_state  = d_bitblast_solver.solve();
       }
       break;
   }

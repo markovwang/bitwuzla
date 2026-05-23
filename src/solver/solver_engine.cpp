@@ -84,6 +84,7 @@ SolverEngine::solve()
       print_statistics();
     }
 
+    d_bv_solver.set_decision_priority_terms(d_context.solve_before_tiers());
     d_sat_state = d_bv_solver.solve();
     if (d_sat_state != Result::SAT)
     {

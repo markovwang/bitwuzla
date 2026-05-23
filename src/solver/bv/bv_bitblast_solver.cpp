@@ -16,6 +16,7 @@
 #include "node/node_utils.h"
 #include "sat/sat_solver_factory.h"
 #include "solver/bv/bv_solver.h"
+#include "util/exceptions.h"
 
 namespace bzla::bv {
 
@@ -89,6 +90,8 @@ BvBitblastSolver::solve()
     d_sat_solver->assume(bits[0].get_id());
   }
 
+  register_decision_priorities();
+
   // Update CNF statistics
   update_statistics();
 
@@ -97,6 +100,13 @@ BvBitblastSolver::solve()
   d_last_result = d_sat_solver->solve();
 
   return d_last_result;
+}
+
+void
+BvBitblastSolver::set_decision_priority_terms(
+    const std::unordered_map<Node, uint32_t>& tiers)
+{
+  d_decision_priority_terms = tiers;
 }
 
 void
@@ -177,6 +187,35 @@ BvBitblastSolver::unsat_core(std::vector<Node>& core) const
 /* --- BvBitblastSolver private --------------------------------------------- */
 
 void
+BvBitblastSolver::register_decision_priorities()
+{
+  d_sat_solver->clear_decision_priority();
+  if (d_decision_priority_terms.empty())
+  {
+    return;
+  }
+  if (!d_sat_solver->supports_decision_priority())
+  {
+    throw Error("solve-before decision priority is only supported by CaDiCaL");
+  }
+
+  for (const auto& [term, priority] : d_decision_priority_terms)
+  {
+    d_bitblaster.bitblast(term);
+    const auto& bits = d_bitblaster.bits(term);
+    for (const auto& bit : bits)
+    {
+      if (bit.is_true() || bit.is_false())
+      {
+        continue;
+      }
+      d_cnf_encoder->encode(bit, false);
+      d_sat_solver->add_decision_priority_lit(bit.get_id(), priority);
+    }
+  }
+}
+
+void
 BvBitblastSolver::update_statistics()
 {
   d_stats.num_aig_ands     = d_bitblaster.num_aig_ands();
@@ -191,7 +230,7 @@ BvBitblastSolver::update_statistics()
 BvBitblastSolver::Statistics::Statistics(util::Statistics& stats,
                                          const std::string& prefix)
     : time_sat(
-        stats.new_stat<util::TimerStatistic>(prefix + "sat::time_solve")),
+          stats.new_stat<util::TimerStatistic>(prefix + "sat::time_solve")),
       time_bitblast(
           stats.new_stat<util::TimerStatistic>(prefix + "aig::time_bitblast")),
       time_encode(

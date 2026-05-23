@@ -10,7 +10,10 @@
 
 #include "solving_context.h"
 
+#include <algorithm>
 #include <cassert>
+#include <unordered_map>
+#include <vector>
 
 #include "check/check_model.h"
 #include "check/check_unsat_core.h"
@@ -54,24 +57,25 @@ SolvingContext::solve()
 #ifndef NDEBUG
   check_no_free_variables();
 #endif
-  d_sat_state = preprocess();
-
-  if (d_sat_state == Result::UNKNOWN)
+  try
   {
-    try
+    compute_solve_before_tiers();
+    d_sat_state = preprocess();
+
+    if (d_sat_state == Result::UNKNOWN)
     {
       d_sat_state = d_solver_engine.solve();
     }
-    catch (const Unsupported& e)
-    {
-      Warn(!d_subsolver) << e.msg();
-      d_sat_state = Result::UNKNOWN;
-    }
-    catch (const Error& e)
-    {
-      std::cerr << "[bzla] error: " << e.msg() << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
+  }
+  catch (const Unsupported& e)
+  {
+    Warn(!d_subsolver) << e.msg();
+    d_sat_state = Result::UNKNOWN;
+  }
+  catch (const Error& e)
+  {
+    std::cerr << "[bzla] error: " << e.msg() << std::endl;
+    std::exit(EXIT_FAILURE);
   }
 
   if (d_sat_state == Result::SAT && d_have_quantifiers.get()
@@ -120,6 +124,23 @@ SolvingContext::rewrite(const Node& node)
 {
   fp::SymFpuNM snm(d_env.nm());
   return d_env.rewriter().rewrite(node);
+}
+
+void
+SolvingContext::add_solve_before(const Node& before, const Node& after)
+{
+  assert(before.type().is_bool() || before.type().is_bv());
+  assert(after.type().is_bool() || after.type().is_bv());
+  if (before == after)
+  {
+    throw Error("invalid self-referential solve-before dependency");
+  }
+  auto edge = std::make_pair(before, after);
+  if (std::find(d_solve_before_edges.begin(), d_solve_before_edges.end(), edge)
+      == d_solve_before_edges.end())
+  {
+    d_solve_before_edges.push_back(edge);
+  }
 }
 
 void
@@ -293,6 +314,90 @@ SolvingContext::check_no_free_variables() const
 }
 
 void
+SolvingContext::compute_solve_before_tiers()
+{
+  d_solve_before_tiers.clear();
+  if (d_solve_before_edges.empty())
+  {
+    return;
+  }
+
+  std::vector<Node> nodes;
+  std::unordered_map<Node, size_t> node_indices;
+  auto get_index = [&](const Node& node) {
+    auto it = node_indices.find(node);
+    if (it != node_indices.end())
+    {
+      return it->second;
+    }
+    size_t index = nodes.size();
+    nodes.push_back(node);
+    node_indices.emplace(node, index);
+    return index;
+  };
+
+  for (const auto& [before, after] : d_solve_before_edges)
+  {
+    if (before == after)
+    {
+      throw Error("invalid self-referential solve-before dependency");
+    }
+    get_index(before);
+    get_index(after);
+  }
+
+  std::vector<std::vector<size_t>> successors(nodes.size());
+  std::vector<uint32_t> indegrees(nodes.size(), 0);
+  for (const auto& [before, after] : d_solve_before_edges)
+  {
+    size_t before_idx = node_indices.at(before);
+    size_t after_idx  = node_indices.at(after);
+    auto& succs       = successors[before_idx];
+    if (std::find(succs.begin(), succs.end(), after_idx) == succs.end())
+    {
+      succs.push_back(after_idx);
+      ++indegrees[after_idx];
+    }
+  }
+
+  std::vector<uint32_t> tiers(nodes.size(), 0);
+  std::vector<size_t> ready;
+  for (size_t i = 0, n = nodes.size(); i < n; ++i)
+  {
+    if (indegrees[i] == 0)
+    {
+      ready.push_back(i);
+    }
+  }
+
+  size_t cursor = 0;
+  while (cursor < ready.size())
+  {
+    size_t cur = ready[cursor++];
+    for (size_t succ : successors[cur])
+    {
+      tiers[succ] = std::max(tiers[succ], tiers[cur] + 1);
+      assert(indegrees[succ] > 0);
+      --indegrees[succ];
+      if (indegrees[succ] == 0)
+      {
+        ready.push_back(succ);
+      }
+    }
+  }
+
+  if (ready.size() != nodes.size())
+  {
+    throw Error("cyclic solve-before dependency");
+  }
+
+  for (size_t i = 0, n = nodes.size(); i < n; ++i)
+  {
+    d_solve_before_tiers.emplace(nodes[i], tiers[i]);
+  }
+}
+
+void
 SolvingContext::compute_formula_statistics(util::HistogramStatistic& stat)
 {
   std::vector<Node> visit;
@@ -357,7 +462,7 @@ SolvingContext::ensure_model()
 void
 SolvingContext::set_resource_limits()
 {
-  auto time_limit = d_env.options().time_limit_per();
+  auto time_limit   = d_env.options().time_limit_per();
   auto memory_limit = d_env.options().memory_limit();
   if (time_limit > 0 || memory_limit > 0)
   {

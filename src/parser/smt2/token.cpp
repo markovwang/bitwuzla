@@ -99,6 +99,7 @@ to_string(bzla::parser::smt2::Token token)
     case Token::SET_LOGIC: return "set-logic";
     case Token::SET_INFO: return "set-info";
     case Token::SET_OPTION: return "set-option";
+    case Token::SET_SOLVE_BEFORE: return "set-solve-before";
     // Keywords
     case Token::ALL_STATISTICS: return ":all-statistics";
     case Token::ASSERTION_STACK_LEVELS: return ":assertion-stack-levels";

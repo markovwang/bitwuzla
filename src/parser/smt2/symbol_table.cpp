@@ -241,6 +241,7 @@ SymbolTable::init_commands()
   insert(Token::SET_INFO);
   insert(Token::SET_LOGIC);
   insert(Token::SET_OPTION);
+  insert(Token::SET_SOLVE_BEFORE);
 }
 
 void

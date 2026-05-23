@@ -1,0 +1,1 @@
+regress/parser/solve_before_self.smt2:3:22: self-referential solve-before dependency

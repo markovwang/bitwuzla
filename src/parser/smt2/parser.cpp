@@ -113,8 +113,7 @@ Parser::parse(const std::string& infile_name,
   d_infile_name = infile_name;
   d_lexer->init(&input);
 
-  while (parse_command(parse_only) && !d_done && !terminate())
-    ;
+  while (parse_command(parse_only) && !d_done && !terminate());
 
   // init in case that we didn't parse any commands that triggered init
   init_bitwuzla();
@@ -283,6 +282,7 @@ Parser::parse_command(bool parse_only)
     case Token::SET_INFO: res = parse_command_set_info(); break;
     case Token::SET_LOGIC: res = parse_command_set_logic(); break;
     case Token::SET_OPTION: res = parse_command_set_option(); break;
+    case Token::SET_SOLVE_BEFORE: res = parse_command_set_solve_before(); break;
 
     default:
       assert(d_lexer->has_token());
@@ -300,7 +300,7 @@ Parser::parse_command_assert()
   init_logic();
   init_bitwuzla();
   d_record_named_assertions = true;
-  Token la = next_token();
+  Token la                  = next_token();
   if (!parse_term(true, la))
   {
     return false;
@@ -1041,6 +1041,56 @@ Parser::parse_command_set_logic()
 }
 
 bool
+Parser::parse_command_set_solve_before()
+{
+  init_logic();
+  init_bitwuzla();
+
+  std::vector<bitwuzla::Term> args;
+  for (size_t i = 0; i < 2; ++i)
+  {
+    Token la = next_token();
+    if (!check_token(la))
+    {
+      return false;
+    }
+    if (la == Token::RPAR)
+    {
+      return error("expected 2 arguments to 'set-solve-before', got "
+                   + std::to_string(i));
+    }
+    if (!parse_term(true, la))
+    {
+      return false;
+    }
+    if (!peek_is_term_arg())
+    {
+      return error("expected term argument to 'set-solve-before'");
+    }
+    bitwuzla::Term term = pop_term_arg();
+    if (!term.sort().is_bool() && !term.sort().is_bv())
+    {
+      return error_arg("expected Boolean or bit-vector term as argument "
+                       + std::to_string(i + 1) + " to 'set-solve-before'");
+    }
+    args.push_back(term);
+  }
+
+  if (!parse_rpar())
+  {
+    return false;
+  }
+  if (args[0] == args[1])
+  {
+    return error("self-referential solve-before dependency");
+  }
+
+  d_bitwuzla->set_solve_before(args[0], args[1]);
+  print_success();
+  return true;
+}
+
+bool
 Parser::parse_command_set_option()
 {
   Token token = next_token();
@@ -1321,7 +1371,7 @@ Parser::parse_open_term(Token token)
     if (d_is_var_binding)
     {
       push_item(Token::LETBIND, d_lexer->coo());
-      d_is_var_binding          = false;
+      d_is_var_binding = false;
       if (!parse_symbol("", true, true))
       {
         return false;
@@ -1333,7 +1383,7 @@ Parser::parse_open_term(Token token)
     {
       // parse <sorted_var>: <symbol> <sort>
       push_item(Token::SORTED_VAR, d_lexer->coo());
-      d_is_sorted_var           = false;
+      d_is_sorted_var = false;
       if (!parse_symbol("in sorted var", true))
       {
         return false;
@@ -1497,8 +1547,8 @@ Parser::parse_open_term_indexed()
   bitwuzla::Kind kind     = bitwuzla::Kind::VALUE;
   SymbolTable::Node* node = d_last_node;
 
-  uint64_t min    = 0;
-  uint64_t nidxs  = 1;
+  uint64_t min   = 0;
+  uint64_t nidxs = 1;
 
   if (token == Token::SYMBOL)
   {
@@ -2748,10 +2798,10 @@ Parser::error(const std::string& error_msg,
   const Lexer::Coordinate& c = coo ? *coo : d_lexer->coo();
   d_error = d_infile_name + ":" + std::to_string(c.line) + ":"
             + std::to_string(c.col) + ": " + error_msg;
-  //#ifndef NDEBUG
-  //  std::cout << "[error] " << d_error << std::endl;
-  //  assert(false);
-  //#endif
+  // #ifndef NDEBUG
+  //   std::cout << "[error] " << d_error << std::endl;
+  //   assert(false);
+  // #endif
   return false;
 }
 
@@ -2895,10 +2945,10 @@ Parser::pop_node_arg(bool set_coo)
 bool
 Parser::pop_args(const ParsedItem& item, std::vector<bitwuzla::Term>& args)
 {
-  Token token     = item.d_token;
-  bool has_rm     = false;
-  size_t n_args   = 0;
-  size_t n_idxs   = 0;
+  Token token   = item.d_token;
+  bool has_rm   = false;
+  size_t n_args = 0;
+  size_t n_idxs = 0;
 
   switch (token)
   {

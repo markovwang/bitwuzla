@@ -11,6 +11,8 @@
 #ifndef BZLA_SOLVER_BV_BV_SOLVER_H_INCLUDED
 #define BZLA_SOLVER_BV_BV_SOLVER_H_INCLUDED
 
+#include <unordered_map>
+
 #include "option/option.h"
 #include "solver/bv/bv_bitblast_solver.h"
 #include "solver/bv/bv_prop_solver.h"
@@ -41,6 +43,10 @@ class BvSolver : public Solver, public BvSolverInterface
   void register_assertion(const Node& assertion,
                           bool top_level,
                           bool is_lemma) override;
+
+  /** Set term-level decision-priority tiers. */
+  void set_decision_priority_terms(
+      const std::unordered_map<Node, uint32_t>& tiers);
 
   Result solve() override;
 

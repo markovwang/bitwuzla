@@ -88,17 +88,17 @@ namespace bitwuzla {
  * Get copyright information.
  * @return A string with the copyright information.
  */
-const char* copyright();
+const char *copyright();
 /**
  * Get version information.
  * @return A string with the version information.
  */
-const char* version();
+const char *version();
 /**
  * Get git information.
  * @return A string with the git information.
  */
-const char* git_id();
+const char *git_id();
 
 /** @} */
 
@@ -122,23 +122,23 @@ class Exception : public std::exception
    * Constructor.
    * @param msg The exception message.
    */
-Exception(const std::string &msg);
-/**
- * Constructor.
- * @param stream The exception message given as a std::stringstream.
- */
-Exception(const std::stringstream &stream);
-/**
- * Get the exception message.
- * @return The exception message.
- */
-const std::string &msg() const;
+  Exception(const std::string &msg);
+  /**
+   * Constructor.
+   * @param stream The exception message given as a std::stringstream.
+   */
+  Exception(const std::stringstream &stream);
+  /**
+   * Get the exception message.
+   * @return The exception message.
+   */
+  const std::string &msg() const;
 
-const char *what() const noexcept override;
+  const char *what() const noexcept override;
 
-protected:
-/** The exception message. */
-std::string d_msg;
+ protected:
+  /** The exception message. */
+  std::string d_msg;
 };
 
 namespace option {
@@ -1475,7 +1475,6 @@ class TermManager
   Term mk_var(const Sort &sort,
               const std::optional<std::string> &symbol = std::nullopt);
 
-
   /* ------------------------------------------------------------------------ */
   /* Term substitution                                                        */
   /* ------------------------------------------------------------------------ */
@@ -1505,7 +1504,6 @@ class TermManager
    */
   void substitute_terms(std::vector<Term> &terms,
                         const std::unordered_map<Term, Term> &map);
-
 
  private:
   std::unique_ptr<bzla::NodeManager> d_nm;
@@ -1576,6 +1574,17 @@ class Bitwuzla
    * @param term The formula to assert.
    */
   void assert_formula(const Term &term);
+
+  /**
+   * Add a solve-before ordering directive.
+   *
+   * This is a Bitwuzla extension used to derive decision-priority tiers for
+   * Boolean and bit-vector terms.
+   *
+   * @param before The term that should be assigned a lower tier.
+   * @param after The term that should be assigned a higher tier.
+   */
+  void set_solve_before(const Term &before, const Term &after);
 
   /**
    * Get the set of currently asserted formulas.

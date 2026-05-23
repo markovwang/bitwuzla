@@ -11,6 +11,7 @@
 #ifndef BZLA_SOLVING_CONTEXT_H_INCLUDED
 #define BZLA_SOLVING_CONTEXT_H_INCLUDED
 
+#include <unordered_map>
 #include <vector>
 
 #include "backtrack/assertion_stack.h"
@@ -46,6 +47,15 @@ class SolvingContext
 
   /** Assert formula to context. */
   void assert_formula(const Node& formula);
+
+  /** Add a solve-before ordering edge. */
+  void add_solve_before(const Node& before, const Node& after);
+
+  /** Get computed solve-before tiers. */
+  const std::unordered_map<Node, uint32_t>& solve_before_tiers() const
+  {
+    return d_solve_before_tiers;
+  }
 
   /**
    * Get the value of `term`.
@@ -92,6 +102,9 @@ class SolvingContext
 
   void ensure_model();
 
+  /** Validate solve-before graph and compute term tiers. */
+  void compute_solve_before_tiers();
+
   /** Set resource terminator. */
   void set_resource_limits();
 
@@ -108,6 +121,12 @@ class SolvingContext
 
   /** Original input assertions added via assert_formula(). */
   backtrack::vector<Node> d_original_assertions;
+
+  /** Term-level solve-before ordering edges. */
+  std::vector<std::pair<Node, Node>> d_solve_before_edges;
+
+  /** Computed solve-before tiers. Lower tier means higher decision priority. */
+  std::unordered_map<Node, uint32_t> d_solve_before_tiers;
 
   /** Do we have quantifiers in the current set of assertions? */
   backtrack::object<bool> d_have_quantifiers;

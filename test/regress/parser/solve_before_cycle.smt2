@@ -1,0 +1,6 @@
+(set-logic QF_BV)
+(declare-fun A () (_ BitVec 8))
+(declare-fun B () (_ BitVec 8))
+(set-solve-before A B)
+(set-solve-before B A)
+(check-sat)

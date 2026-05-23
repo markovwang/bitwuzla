@@ -108,6 +108,7 @@ enum class Token
   SET_INFO,
   SET_LOGIC,
   SET_OPTION,
+  SET_SOLVE_BEFORE,
   // 'declare-datatype' unsupported
   // 'declare-datatypes' unsupported
   // 'define-fun-rec' unsupported

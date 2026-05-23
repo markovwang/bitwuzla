@@ -34,20 +34,25 @@ class Cadical : public SatSolver
 {
  public:
   Cadical();
+  ~Cadical();
 
   void add(int32_t lit) override;
   void assume(int32_t lit) override;
   int32_t value(int32_t lit) override;
   bool failed(int32_t lit) override;
   int32_t fixed(int32_t lit) override;
+  bool supports_decision_priority() const override { return true; }
+  void clear_decision_priority() override;
+  void add_decision_priority_lit(int32_t lit, uint32_t priority) override;
   Result solve() override;
   void configure_terminator(Terminator* terminator) override;
-  const char *get_name() const override { return "CaDiCaL"; }
-  const char *get_version() const override;
+  const char* get_name() const override { return "CaDiCaL"; }
+  const char* get_version() const override;
 
  private:
-  std::unique_ptr<CaDiCaL::Solver> d_solver   = nullptr;
-  std::unique_ptr<CaDiCaL::Terminator> d_term = nullptr;
+  std::unique_ptr<CaDiCaL::Solver> d_solver                    = nullptr;
+  std::unique_ptr<CaDiCaL::Terminator> d_term                  = nullptr;
+  std::unique_ptr<CaDiCaL::ExternalPropagator> d_decision_prop = nullptr;
 };
 
 }  // namespace bzla::sat

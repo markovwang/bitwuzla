@@ -11,6 +11,8 @@
 #ifndef BZLA_SOLVER_BV_BV_BITBLAST_SOLVER_H_INCLUDED
 #define BZLA_SOLVER_BV_BV_BITBLAST_SOLVER_H_INCLUDED
 
+#include <unordered_map>
+
 #include "backtrack/vector.h"
 #include "bitblast/aig/aig_cnf.h"
 #include "sat/sat_solver.h"
@@ -35,6 +37,10 @@ class BvBitblastSolver : public Solver, public BvSolverInterface
                           bool top_level,
                           bool is_lemma) override;
 
+  /** Set term-level decision-priority tiers. */
+  void set_decision_priority_terms(
+      const std::unordered_map<Node, uint32_t>& tiers);
+
   /** Query value of leaf node. */
   Node value(const Node& term) override;
 
@@ -51,6 +57,9 @@ class BvBitblastSolver : public Solver, public BvSolverInterface
   /** Update AIG and CNF statistics. */
   void update_statistics();
 
+  /** Register bit-blasted priority terms with SAT solver. */
+  void register_decision_priorities();
+
   /** Sat interface used for d_cnf_encoder. */
   class BitblastSatSolver;
 
@@ -58,6 +67,9 @@ class BvBitblastSolver : public Solver, public BvSolverInterface
   backtrack::vector<Node> d_assertions;
   /** The current set of assumptions. */
   backtrack::vector<Node> d_assumptions;
+
+  /** Term-level decision-priority tiers. */
+  std::unordered_map<Node, uint32_t> d_decision_priority_terms;
 
   /** AIG bit-blaster. */
   AigBitblaster d_bitblaster;

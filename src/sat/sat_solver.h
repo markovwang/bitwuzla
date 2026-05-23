@@ -56,6 +56,19 @@ class SatSolver
    * @return 1 if it is implied, -1 if it is not implied and 0 if unknown.
    */
   virtual int32_t fixed(int32_t lit) = 0;
+  /** @return True if this SAT solver supports decision-priority hints. */
+  virtual bool supports_decision_priority() const { return false; }
+  /** Reset all registered decision-priority hints. */
+  virtual void clear_decision_priority() {}
+  /**
+   * Add a decision-priority hint for a literal.
+   * Lower priority values should be selected first.
+   */
+  virtual void add_decision_priority_lit(int32_t lit, uint32_t priority)
+  {
+    (void) lit;
+    (void) priority;
+  }
   /**
    * Check satisfiability of current formula.
    * @return The result of the satisfiability check.

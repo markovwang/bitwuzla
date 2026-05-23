@@ -247,6 +247,11 @@ class Parser : public bzla::parser::Parser
    * @return True if command was parsed without an error.
    */
   bool parse_command_set_option();
+  /**
+   * Parse Bitwuzla-specific set-solve-before command.
+   * @return True if command was parsed without an error.
+   */
+  bool parse_command_set_solve_before();
 
   /**
    * Parse left parenthesis.
@@ -796,9 +801,9 @@ class Parser : public bzla::parser::Parser
   /** True if input file contains arrays. */
   bool d_arrays_enabled = false;
   /** True if input file contains bit-vectors. */
-  bool d_bv_enabled     = false;
+  bool d_bv_enabled = false;
   /** True if input file contains floating-point arithmetic. */
-  bool d_fp_enabled     = false;
+  bool d_fp_enabled = false;
   /** The enabled logic. */
   std::string d_logic;
 
@@ -825,9 +830,9 @@ class Parser : public bzla::parser::Parser
   uint64_t d_token_class_mask = 0;
 
   /** True if currently open term expects a body term. */
-  bool d_expect_body    = false;
+  bool d_expect_body = false;
   /** True if currently open term is a sorted variable. */
-  bool d_is_sorted_var  = false;
+  bool d_is_sorted_var = false;
   /** True if currently open term is a variable binding. */
   bool d_is_var_binding = false;
 

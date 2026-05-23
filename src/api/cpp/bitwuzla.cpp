@@ -282,19 +282,19 @@ static const std::unordered_map<bzla::node::Kind, Kind> s_kinds =
 
 /* -------------------------------------------------------------------------- */
 
-const char*
+const char *
 copyright()
 {
   return bzla::config::license;
 }
 
-const char*
+const char *
 version()
 {
   return bzla::config::version;
 }
 
-const char*
+const char *
 git_id()
 {
   return bzla::config::git_id;
@@ -625,8 +625,8 @@ Options::set(const std::vector<std::string> &args)
         {
           BITWUZLA_CHECK(false)
               << "invalid option value for Boolean option '" << opt
-              << "', expected '1', '0', 'true' or 'false'; got '"
-              << value << "'";
+              << "', expected '1', '0', 'true' or 'false'; got '" << value
+              << "'";
         }
       }
       if (is_no)
@@ -1438,6 +1438,25 @@ Bitwuzla::assert_formula(const Term &term)
   BITWUZLA_CHECK_TERM_TERM_MGR_BITWUZLA(term, "asserted formula");
   solver_state_change();
   d_ctx->assert_formula(*term.d_node);
+}
+
+void
+Bitwuzla::set_solve_before(const Term &before, const Term &after)
+{
+  BITWUZLA_CHECK_NOT_NULL(d_ctx);
+  BITWUZLA_CHECK(d_n_sat_calls == 0)
+      << "solve-before directives must be added before check_sat";
+  BITWUZLA_CHECK_TERM_NOT_NULL(before);
+  BITWUZLA_CHECK_TERM_NOT_NULL(after);
+  BITWUZLA_CHECK(before.sort().is_bool() || before.sort().is_bv())
+      << "expected Boolean or bit-vector term for 'before'";
+  BITWUZLA_CHECK(after.sort().is_bool() || after.sort().is_bv())
+      << "expected Boolean or bit-vector term for 'after'";
+  BITWUZLA_CHECK_TERM_TERM_MGR_BITWUZLA(before, "solve-before term");
+  BITWUZLA_CHECK_TERM_TERM_MGR_BITWUZLA(after, "solve-before term");
+  BITWUZLA_CHECK(before != after) << "self-referential solve-before dependency";
+  solver_state_change();
+  d_ctx->add_solve_before(*before.d_node, *after.d_node);
 }
 
 std::vector<Term>

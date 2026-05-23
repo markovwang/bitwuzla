@@ -1,0 +1,7 @@
+(set-logic QF_BV)
+(set-info :status sat)
+(declare-fun A () (_ BitVec 8))
+(declare-fun B () (_ BitVec 8))
+(assert (= B (bvadd A #x01)))
+(set-solve-before A B)
+(check-sat)
