@@ -38,6 +38,13 @@ unit_tests = [
       'smt2_symbol_table',
     ]
   ],
+
+  ['sat',
+    [
+      'cadical_decision_priority',
+    ]
+  ],
+
   ['preprocess',
     [
       'assertion_tracker',

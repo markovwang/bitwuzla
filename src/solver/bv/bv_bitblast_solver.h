@@ -57,6 +57,9 @@ class BvBitblastSolver : public Solver, public BvSolverInterface
   /** Update AIG and CNF statistics. */
   void update_statistics();
 
+  /** Sync decision-priority statistics from the SAT solver. */
+  void update_decision_priority_sat_statistics();
+
   /** Register bit-blasted priority terms with SAT solver. */
   void register_decision_priorities();
 
@@ -89,12 +92,40 @@ class BvBitblastSolver : public Solver, public BvSolverInterface
     util::TimerStatistic& time_sat;
     util::TimerStatistic& time_bitblast;
     util::TimerStatistic& time_encode;
+    util::TimerStatistic& time_decision_priority_register;
+    util::TimerStatistic& time_decision_priority_bitblast;
+    util::TimerStatistic& time_decision_priority_encode;
     uint64_t& num_aig_ands;
     uint64_t& num_aig_consts;
     uint64_t& num_aig_shared;
     uint64_t& num_cnf_vars;
     uint64_t& num_cnf_clauses;
     uint64_t& num_cnf_literals;
+    uint64_t& num_decision_priority_register_rounds;
+    uint64_t& num_decision_priority_terms;
+    uint64_t& num_decision_priority_bits;
+    uint64_t& num_decision_priority_const_bits;
+    uint64_t& num_decision_priority_lits;
+    uint64_t& num_decision_priority_sat_add_lit_calls;
+    uint64_t& num_decision_priority_sat_add_lit_duplicates;
+    uint64_t& num_decision_priority_sat_unique_lits;
+    uint64_t& num_decision_priority_sat_max_priority_buckets;
+    uint64_t& num_decision_priority_sat_native_seed;
+    uint64_t& num_decision_priority_sat_native_decide_calls;
+    uint64_t& num_decision_priority_sat_native_decide_returns;
+    uint64_t& num_decision_priority_sat_native_decide_fallbacks;
+    uint64_t& num_decision_priority_sat_native_decide_positive;
+    uint64_t& num_decision_priority_sat_native_decide_negative;
+    uint64_t& num_decision_priority_sat_observed_var_calls;
+    uint64_t& num_decision_priority_sat_cb_decide_calls;
+    uint64_t& num_decision_priority_sat_cb_decide_returns;
+    uint64_t& num_decision_priority_sat_cb_decide_fallbacks;
+    uint64_t& num_decision_priority_sat_cb_decide_scanned_lits;
+    uint64_t& num_decision_priority_sat_cb_decide_max_scan;
+    uint64_t& num_decision_priority_sat_notify_assignment_calls;
+    uint64_t& num_decision_priority_sat_notify_backtrack_calls;
+    uint64_t& num_decision_priority_sat_notify_new_decision_level_calls;
+    uint64_t& num_decision_priority_sat_notify_backtrack_erased_vars;
   } d_stats;
 };
 

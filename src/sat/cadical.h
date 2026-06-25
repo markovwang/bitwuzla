@@ -12,6 +12,7 @@
 #define BZLA_SAT_CADICAL_H_INCLUDED
 
 #include <cadical.hpp>
+#include <cstdint>
 #include <memory>
 
 #include "sat/sat_solver.h"
@@ -33,7 +34,7 @@ class CadicalTerminator : public CaDiCaL::Terminator
 class Cadical : public SatSolver
 {
  public:
-  Cadical();
+  explicit Cadical(uint32_t seed = 0);
   ~Cadical();
 
   void add(int32_t lit) override;
@@ -44,15 +45,15 @@ class Cadical : public SatSolver
   bool supports_decision_priority() const override { return true; }
   void clear_decision_priority() override;
   void add_decision_priority_lit(int32_t lit, uint32_t priority) override;
+  DecisionPriorityStats decision_priority_stats() const override;
   Result solve() override;
   void configure_terminator(Terminator* terminator) override;
   const char* get_name() const override { return "CaDiCaL"; }
   const char* get_version() const override;
 
  private:
-  std::unique_ptr<CaDiCaL::Solver> d_solver                    = nullptr;
-  std::unique_ptr<CaDiCaL::Terminator> d_term                  = nullptr;
-  std::unique_ptr<CaDiCaL::ExternalPropagator> d_decision_prop = nullptr;
+  std::unique_ptr<CaDiCaL::Solver> d_solver   = nullptr;
+  std::unique_ptr<CaDiCaL::Terminator> d_term = nullptr;
 };
 
 }  // namespace bzla::sat

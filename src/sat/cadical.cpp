@@ -10,117 +10,9 @@
 
 #include "sat/cadical.h"
 
-#include <algorithm>
 #include <cassert>
-#include <cstdlib>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
 
 namespace bzla::sat {
-
-class CadicalDecisionPropagator : public CaDiCaL::ExternalPropagator
-{
- public:
-  CadicalDecisionPropagator() { d_assignments.emplace_back(); }
-
-  void clear()
-  {
-    d_buckets.clear();
-    d_ordered_priorities.clear();
-    d_assigned_vars.clear();
-    d_assignments.clear();
-    d_assignments.emplace_back();
-  }
-
-  void add_lit(int32_t lit, uint32_t priority)
-  {
-    assert(lit);
-    auto& bucket = d_buckets[priority];
-    if (std::find(bucket.begin(), bucket.end(), lit) == bucket.end())
-    {
-      bucket.push_back(lit);
-    }
-    if (std::find(
-            d_ordered_priorities.begin(), d_ordered_priorities.end(), priority)
-        == d_ordered_priorities.end())
-    {
-      d_ordered_priorities.push_back(priority);
-      std::sort(d_ordered_priorities.begin(), d_ordered_priorities.end());
-    }
-  }
-
-  void notify_assignment(int lit, bool is_fixed) override
-  {
-    int var = std::abs(lit);
-    if (!d_assigned_vars.insert(var).second)
-    {
-      return;
-    }
-    if (d_assignments.empty())
-    {
-      d_assignments.emplace_back();
-    }
-    if (is_fixed)
-    {
-      d_assignments[0].push_back(var);
-    }
-    else
-    {
-      d_assignments.back().push_back(var);
-    }
-  }
-
-  void notify_new_decision_level() override { d_assignments.emplace_back(); }
-
-  void notify_backtrack(size_t new_level) override
-  {
-    size_t keep = new_level + 1;
-    while (d_assignments.size() > keep)
-    {
-      for (int var : d_assignments.back())
-      {
-        d_assigned_vars.erase(var);
-      }
-      d_assignments.pop_back();
-    }
-    if (d_assignments.empty())
-    {
-      d_assignments.emplace_back();
-    }
-  }
-
-  bool cb_check_found_model(const std::vector<int>& model) override
-  {
-    (void) model;
-    return true;
-  }
-
-  int cb_decide() override
-  {
-    for (uint32_t priority : d_ordered_priorities)
-    {
-      for (int lit : d_buckets[priority])
-      {
-        if (d_assigned_vars.find(std::abs(lit)) == d_assigned_vars.end())
-        {
-          return lit;
-        }
-      }
-    }
-    return 0;
-  }
-
-  bool cb_has_external_clause() override { return false; }
-
-  int cb_add_external_clause_lit() override { return 0; }
-
- private:
-  std::unordered_map<uint32_t, std::vector<int>> d_buckets;
-  std::vector<uint32_t> d_ordered_priorities;
-  std::unordered_set<int> d_assigned_vars;
-  std::vector<std::vector<int>> d_assignments;
-};
 
 /* CadicalTerminator public ------------------------------------------------- */
 
@@ -138,11 +30,10 @@ CadicalTerminator::terminate()
 
 /* Cadical public ----------------------------------------------------------- */
 
-Cadical::Cadical()
+Cadical::Cadical(uint32_t seed)
 {
   d_solver.reset(new CaDiCaL::Solver());
-  d_decision_prop.reset(new CadicalDecisionPropagator());
-  d_solver->connect_external_propagator(d_decision_prop.get());
+  d_solver->set_decision_priority_seed(seed);
   d_solver->set("shrink", 0);
   d_solver->set("quiet", 1);
 }
@@ -185,16 +76,32 @@ Cadical::fixed(int32_t lit)
 void
 Cadical::clear_decision_priority()
 {
-  static_cast<CadicalDecisionPropagator*>(d_decision_prop.get())->clear();
+  d_solver->clear_decision_priority();
 }
 
 void
 Cadical::add_decision_priority_lit(int32_t lit, uint32_t priority)
 {
   assert(lit);
-  static_cast<CadicalDecisionPropagator*>(d_decision_prop.get())
-      ->add_lit(lit, priority);
-  d_solver->add_observed_var(std::abs(lit));
+  d_solver->add_decision_priority_lit(lit, priority);
+}
+
+DecisionPriorityStats
+Cadical::decision_priority_stats() const
+{
+  const auto native = d_solver->decision_priority_stats();
+  DecisionPriorityStats stats;
+  stats.add_lit_calls       = native.add_lit_calls;
+  stats.add_lit_duplicates  = native.add_lit_duplicates;
+  stats.unique_lits         = native.unique_lits;
+  stats.max_priority_buckets = native.max_priority_buckets;
+  stats.native_seed         = native.seed;
+  stats.native_decide_calls = native.decide_calls;
+  stats.native_decide_returns = native.decide_returns;
+  stats.native_decide_fallbacks = native.decide_fallbacks;
+  stats.native_decide_positive = native.decide_positive;
+  stats.native_decide_negative = native.decide_negative;
+  return stats;
 }
 
 Result

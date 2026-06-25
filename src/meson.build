@@ -14,14 +14,8 @@ gmp_dep = dependency('gmp',
 
 # Subproject dependencies
 
-# CaDiCaL does not provide pkg-config to find dependency
-cadical_dep = cpp_compiler.find_library('cadical',
-                                        has_headers: 'cadical.hpp',
-                                        static: build_static,
-                                        required: false)
-if not cadical_dep.found()
-  cadical_dep = dependency('cadical', required: true)
-endif
+# Force using subproject cadical (downloaded via wrap file) instead of system cadical
+cadical_dep = dependency('cadical', required: true)
 
 cms_dep = dependency('cryptominisat5',
                      version: '5.11.21',

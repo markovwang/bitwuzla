@@ -98,6 +98,7 @@ BvBitblastSolver::solve()
   d_solver_state.print_statistics();
   util::Timer timer(d_stats.time_sat);
   d_last_result = d_sat_solver->solve();
+  update_decision_priority_sat_statistics();
 
   return d_last_result;
 }
@@ -199,20 +200,76 @@ BvBitblastSolver::register_decision_priorities()
     throw Error("solve-before decision priority is only supported by CaDiCaL");
   }
 
+  ++d_stats.num_decision_priority_register_rounds;
+  util::Timer timer(d_stats.time_decision_priority_register);
   for (const auto& [term, priority] : d_decision_priority_terms)
   {
-    d_bitblaster.bitblast(term);
+    ++d_stats.num_decision_priority_terms;
+    {
+      util::Timer timer_bitblast(d_stats.time_decision_priority_bitblast);
+      d_bitblaster.bitblast(term);
+    }
     const auto& bits = d_bitblaster.bits(term);
+    d_stats.num_decision_priority_bits += bits.size();
     for (const auto& bit : bits)
     {
       if (bit.is_true() || bit.is_false())
       {
+        ++d_stats.num_decision_priority_const_bits;
         continue;
       }
-      d_cnf_encoder->encode(bit, false);
+      {
+        util::Timer timer_encode(d_stats.time_encode);
+        util::Timer timer_priority_encode(
+            d_stats.time_decision_priority_encode);
+        d_cnf_encoder->encode(bit, false);
+      }
       d_sat_solver->add_decision_priority_lit(bit.get_id(), priority);
+      ++d_stats.num_decision_priority_lits;
     }
   }
+}
+
+void
+BvBitblastSolver::update_decision_priority_sat_statistics()
+{
+  const auto stats = d_sat_solver->decision_priority_stats();
+  d_stats.num_decision_priority_sat_add_lit_calls = stats.add_lit_calls;
+  d_stats.num_decision_priority_sat_add_lit_duplicates =
+      stats.add_lit_duplicates;
+  d_stats.num_decision_priority_sat_unique_lits = stats.unique_lits;
+  d_stats.num_decision_priority_sat_max_priority_buckets =
+      stats.max_priority_buckets;
+  d_stats.num_decision_priority_sat_native_seed = stats.native_seed;
+  d_stats.num_decision_priority_sat_native_decide_calls =
+      stats.native_decide_calls;
+  d_stats.num_decision_priority_sat_native_decide_returns =
+      stats.native_decide_returns;
+  d_stats.num_decision_priority_sat_native_decide_fallbacks =
+      stats.native_decide_fallbacks;
+  d_stats.num_decision_priority_sat_native_decide_positive =
+      stats.native_decide_positive;
+  d_stats.num_decision_priority_sat_native_decide_negative =
+      stats.native_decide_negative;
+  d_stats.num_decision_priority_sat_observed_var_calls =
+      stats.observed_var_calls;
+  d_stats.num_decision_priority_sat_cb_decide_calls = stats.cb_decide_calls;
+  d_stats.num_decision_priority_sat_cb_decide_returns =
+      stats.cb_decide_returns;
+  d_stats.num_decision_priority_sat_cb_decide_fallbacks =
+      stats.cb_decide_fallbacks;
+  d_stats.num_decision_priority_sat_cb_decide_scanned_lits =
+      stats.cb_decide_scanned_lits;
+  d_stats.num_decision_priority_sat_cb_decide_max_scan =
+      stats.cb_decide_max_scan;
+  d_stats.num_decision_priority_sat_notify_assignment_calls =
+      stats.notify_assignment_calls;
+  d_stats.num_decision_priority_sat_notify_backtrack_calls =
+      stats.notify_backtrack_calls;
+  d_stats.num_decision_priority_sat_notify_new_decision_level_calls =
+      stats.notify_new_decision_level_calls;
+  d_stats.num_decision_priority_sat_notify_backtrack_erased_vars =
+      stats.notify_backtrack_erased_vars;
 }
 
 void
@@ -235,12 +292,80 @@ BvBitblastSolver::Statistics::Statistics(util::Statistics& stats,
           stats.new_stat<util::TimerStatistic>(prefix + "aig::time_bitblast")),
       time_encode(
           stats.new_stat<util::TimerStatistic>(prefix + "cnf::time_encode")),
+      time_decision_priority_register(
+          stats.new_stat<util::TimerStatistic>(
+              prefix + "decision_priority::time_register")),
+      time_decision_priority_bitblast(
+          stats.new_stat<util::TimerStatistic>(
+              prefix + "decision_priority::time_bitblast")),
+      time_decision_priority_encode(
+          stats.new_stat<util::TimerStatistic>(
+              prefix + "decision_priority::time_encode")),
       num_aig_ands(stats.new_stat<uint64_t>(prefix + "aig::num_ands")),
       num_aig_consts(stats.new_stat<uint64_t>(prefix + "aig::num_consts")),
       num_aig_shared(stats.new_stat<uint64_t>(prefix + "aig::num_shared")),
       num_cnf_vars(stats.new_stat<uint64_t>(prefix + "cnf::num_vars")),
       num_cnf_clauses(stats.new_stat<uint64_t>(prefix + "cnf::num_clauses")),
-      num_cnf_literals(stats.new_stat<uint64_t>(prefix + "cnf::num_literals"))
+      num_cnf_literals(stats.new_stat<uint64_t>(prefix + "cnf::num_literals")),
+      num_decision_priority_register_rounds(stats.new_stat<uint64_t>(
+          prefix + "decision_priority::register_rounds")),
+      num_decision_priority_terms(
+          stats.new_stat<uint64_t>(prefix + "decision_priority::terms")),
+      num_decision_priority_bits(
+          stats.new_stat<uint64_t>(prefix + "decision_priority::bits")),
+      num_decision_priority_const_bits(
+          stats.new_stat<uint64_t>(prefix + "decision_priority::const_bits")),
+      num_decision_priority_lits(
+          stats.new_stat<uint64_t>(prefix + "decision_priority::lits")),
+      num_decision_priority_sat_add_lit_calls(stats.new_stat<uint64_t>(
+          prefix + "decision_priority::sat::add_lit_calls")),
+      num_decision_priority_sat_add_lit_duplicates(stats.new_stat<uint64_t>(
+          prefix + "decision_priority::sat::add_lit_duplicates")),
+      num_decision_priority_sat_unique_lits(stats.new_stat<uint64_t>(
+          prefix + "decision_priority::sat::unique_lits")),
+      num_decision_priority_sat_max_priority_buckets(stats.new_stat<uint64_t>(
+          prefix + "decision_priority::sat::max_priority_buckets")),
+      num_decision_priority_sat_native_seed(stats.new_stat<uint64_t>(
+          prefix + "decision_priority::sat::native_seed")),
+      num_decision_priority_sat_native_decide_calls(stats.new_stat<uint64_t>(
+          prefix + "decision_priority::sat::native_decide_calls")),
+      num_decision_priority_sat_native_decide_returns(stats.new_stat<uint64_t>(
+          prefix + "decision_priority::sat::native_decide_returns")),
+      num_decision_priority_sat_native_decide_fallbacks(
+          stats.new_stat<uint64_t>(
+              prefix + "decision_priority::sat::native_decide_fallbacks")),
+      num_decision_priority_sat_native_decide_positive(
+          stats.new_stat<uint64_t>(
+              prefix + "decision_priority::sat::native_decide_positive")),
+      num_decision_priority_sat_native_decide_negative(
+          stats.new_stat<uint64_t>(
+              prefix + "decision_priority::sat::native_decide_negative")),
+      num_decision_priority_sat_observed_var_calls(stats.new_stat<uint64_t>(
+          prefix + "decision_priority::sat::observed_var_calls")),
+      num_decision_priority_sat_cb_decide_calls(stats.new_stat<uint64_t>(
+          prefix + "decision_priority::sat::cb_decide_calls")),
+      num_decision_priority_sat_cb_decide_returns(stats.new_stat<uint64_t>(
+          prefix + "decision_priority::sat::cb_decide_returns")),
+      num_decision_priority_sat_cb_decide_fallbacks(stats.new_stat<uint64_t>(
+          prefix + "decision_priority::sat::cb_decide_fallbacks")),
+      num_decision_priority_sat_cb_decide_scanned_lits(stats.new_stat<uint64_t>(
+          prefix + "decision_priority::sat::cb_decide_scanned_lits")),
+      num_decision_priority_sat_cb_decide_max_scan(stats.new_stat<uint64_t>(
+          prefix + "decision_priority::sat::cb_decide_max_scan")),
+      num_decision_priority_sat_notify_assignment_calls(
+          stats.new_stat<uint64_t>(
+              prefix + "decision_priority::sat::notify_assignment_calls")),
+      num_decision_priority_sat_notify_backtrack_calls(
+          stats.new_stat<uint64_t>(
+              prefix + "decision_priority::sat::notify_backtrack_calls")),
+      num_decision_priority_sat_notify_new_decision_level_calls(
+          stats.new_stat<uint64_t>(
+              prefix
+              + "decision_priority::sat::notify_new_decision_level_calls")),
+      num_decision_priority_sat_notify_backtrack_erased_vars(
+          stats.new_stat<uint64_t>(
+              prefix
+              + "decision_priority::sat::notify_backtrack_erased_vars"))
 {
 }
 

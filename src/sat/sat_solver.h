@@ -18,6 +18,30 @@
 
 namespace bzla::sat {
 
+struct DecisionPriorityStats
+{
+  uint64_t add_lit_calls = 0;
+  uint64_t add_lit_duplicates = 0;
+  uint64_t unique_lits = 0;
+  uint64_t max_priority_buckets = 0;
+  uint64_t native_seed = 0;
+  uint64_t native_decide_calls = 0;
+  uint64_t native_decide_returns = 0;
+  uint64_t native_decide_fallbacks = 0;
+  uint64_t native_decide_positive = 0;
+  uint64_t native_decide_negative = 0;
+  uint64_t observed_var_calls = 0;
+  uint64_t cb_decide_calls = 0;
+  uint64_t cb_decide_returns = 0;
+  uint64_t cb_decide_fallbacks = 0;
+  uint64_t cb_decide_scanned_lits = 0;
+  uint64_t cb_decide_max_scan = 0;
+  uint64_t notify_assignment_calls = 0;
+  uint64_t notify_backtrack_calls = 0;
+  uint64_t notify_new_decision_level_calls = 0;
+  uint64_t notify_backtrack_erased_vars = 0;
+};
+
 class SatSolver
 {
  public:
@@ -69,6 +93,8 @@ class SatSolver
     (void) lit;
     (void) priority;
   }
+  /** @return Aggregated decision-priority statistics. */
+  virtual DecisionPriorityStats decision_priority_stats() const { return {}; }
   /**
    * Check satisfiability of current formula.
    * @return The result of the satisfiability check.

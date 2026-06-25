@@ -19,7 +19,6 @@ namespace bzla::sat {
 SatSolver*
 new_sat_solver(const option::Options& options)
 {
-  (void) options;
 #ifdef BZLA_USE_KISSAT
   if (options.sat_solver() == option::SatSolver::KISSAT)
   {
@@ -32,7 +31,7 @@ new_sat_solver(const option::Options& options)
     return new CryptoMiniSat(options.nthreads());
   }
 #endif
-  return new Cadical();
+  return new Cadical(options.seed());
 }
 
 }  // namespace bzla::sat
